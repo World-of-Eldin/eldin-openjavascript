@@ -1,0 +1,81 @@
+Version 1.0.3:
+- Fixed VariableStorage, you can now store dynamic java and javascript classes
+- errors will broadcast to ops (can be configured)
+- script management structure has been completely restructured (internal)
+- FeatureFlags system! You can now prevent scripts from loading automatically
+- LoadScript and UnloadScript and waitForScript function!
+- CUSTOM EVENTS: LoadScript and UnloadScript events
+
+Version 1.0.4:
+- Fixed update checker, it no longer uses cached versions because they have huge update delays
+- Renamed setStoredVar and getStoredVar to loadVar and saveVar
+- simplified statements for the command handler
+- added a version command to easily retrieve the plugin version
+- preparing for 1.0.5
+
+Version 1.0.5
+- Folia support (experemential)
+- native Nashorn /Javascript implementation
+- Debug code cleanup
+- Remove deprecated functions
+- Much faster script engine initialization
+- Support for custom commands
+- Compiled plugin in Java 17
+
+Version 1.0.6:
+🟩️ add PlaceholderApi support
+🟩️ Drop cache into storage after buffer limit reached (memory leak fix)
+🟩️ add permission system to custom commands (make sure permissions are optional)
+
+Version 1.0.7:
+# Small patch with new additions
+- Fixed Schedules not unregistering on Folia Servers
+- Fixed Plugin breaking if PlaceholderApi is not installed
+- Fixed /oj reload command on Folia servers
+- Added Bstats opt-out option in the configuration file
+- Fixed a few weird errors that only occurred on Folia servers
+- Fixed Bstats silently failing to load on Folia servers
+
+Version 1.1.0:
+🟩️ Fix memory leaks with scheduling
+🟩️ Fix async scheduling thread limit (use thread pool instead of folia scheduler)
+🟩️ add option to cancel schedules
+🟩️ create a new task api that has the required scheduling stuff
+🟩️ Finalize Folia support (try to make it as stable as possible on Folia)
+🟩️ add external .jar package loading
+🟩️ improve and release translation layer for java to javascript (allow scripts to access other plugin apis)
+
+Version 1.2.0:
+🟩️ Fix Commands not unregistering properly (cause, bukkit does not allow commands with uppercase, lowercase only. register commands lowercase)
+🟩️ Reduce plugin file size
+🟩️ Fix placeholders unregistering after reloading placeholderapi
+🟩️ add better error catching to prevent scripts from freezing
+🟩️ create a system in the task library that will allow scripts to create java listeners/proxies
+🟩️ add universal cleanup for listeners/proxies
+🟩️ add internal official support for ProtocolLib
+🟩️ reduced IO operations during script loading
+🟩️ new system for loading external plugin support bridges
+🟩️ port PlaceholderApi to new BridgeEngine loader | current implementation messy
+🟩️ Lazy load PlaceholderApi support
+🟩️ fix "nullFailed to unregister all script commands"
+🟩️ add removePlaceholder(String : prefix) for scripts
+🟩️ add commands: "documentation" and "page"
+🟩️ add missing tab-completion version
+🟩️ stop using log.info on errors, use log.scriptLog instead to catch errors more better
+🟩️ fix missing script source name on rare error cases ( ghost errors )
+🟩️ lift/remove feature flags limit
+🟩️ add missing unregisterEvent() method
+🟩️ update documentation, add missing things: getMethod, removePlaceholder, ProtocolLib, internal variables
+ - why did the update and up being so large lmao
+
+Version 1.3.0:
+🟩️ fix diskApi being sightly broken ( WHY DID NOBODY REPORT THIS ;-; )
+🟩️ add diskApi removing entry from datastore if value is NULL
+🟩️ add diskApi saving active files when reloading script (ITS COMPILED GNG TEST IT)
+- add official support for folders
+- add Overwrite variable to custom commands (force overwrites plugin scripts)
+- make the cache do not drop instantly, only drop the cache after completing I/O Operation
+- add FileApi for IO operations inside scripts within the plugin folder
+- on script errors/exceptions use ERROR() instead of WARN()
+
+==/   Use *maven install* to compile the project; the xxx-shaded.jar is the plugin file   \==

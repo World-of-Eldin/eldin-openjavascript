@@ -1,0 +1,33 @@
+name: OpenJS
+author: coolcostupit
+
+version: '${project.version}'
+main: coolcostupit.openjs.OpenJSPlugin
+api-version: '1.13'
+load: POSTWORLD
+folia-supported: true
+
+softdepend:
+  - PlaceholderAPI
+  - ProtocolLib
+
+commands:
+  oj:
+    description: OpenJS command
+    usage: /<command>
+    permission: openjs.use
+  openjavascript:
+    description: OpenJS command
+    usage: /<command>
+    permission: openjs.use
+  openjs:
+    description: OpenJS command
+    usage: /<command>
+    permission: openjs.use
+permissions:
+  openjs.use:
+    description: Allows using OpenJS commands
+    default: op
+  openjs.*:
+    description: Allows all OpenJS commands
+    default: op

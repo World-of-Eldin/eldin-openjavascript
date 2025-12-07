@@ -1,0 +1,40 @@
+# Disabling this will make it impossible for you to listen to events
+# in your javascript's
+LoadCustomEventsHandler: true
+
+# DO NOT DISABLE! Unless you don't use the //!import feature
+# and the log.(...) feature inside event handlers
+UseCustomInterpreter: true
+
+# Prints in the console, whenever a javascript has been loaded
+# by default, scripts that failed to load will print in the console
+PrintScriptActivations: true
+
+# Logs in the console, whenever a placeholder gets
+# registered or unregistered
+LogPlaceHolderActivity: true
+
+# Logs in the console, whenever a custom command
+# gets enabled/loaded or disabled/removed
+LogCustomCommandsActivity: true
+
+# Will send messages regarding errors and warnings to operators or users who have
+# the permission to use the commands from OpenJS
+BroadcastToOps: true
+
+# You can disable this, but if you use schedules inside your scripts
+# you need to keep it enabled
+LoadCustomScheduler: true
+
+# Checks for updates and notifies admins and the console for an update
+# you can disable this, but it is better to stay up to date
+UpdateNotifications: true
+
+# Allows usage of feature flags, disabling this can decrease script loading times
+# feature flags are being used like this "//!Flagname"
+# see https://docs-mc-1.gitbook.io/openjs-docs/openjs-components/fflags
+# under the feature flags section for more info
+AllowFeatureFlags: true
+
+# opt-in/out from Bstats https://bstats.org/plugin/bukkit/OpenJavaScript/22268
+AllowBstats: true

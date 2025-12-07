@@ -1,0 +1,105 @@
+/*
+ * Copyright (c) 2025 coolcostupit
+ * Licensed under AGPL-3.0
+ * You may not remove this notice or claim this work as your own.
+ */
+
+package coolcostupit.openjs.foliascheduler.folia;
+
+import coolcostupit.openjs.foliascheduler.AsyncSchedulerImplementation;
+import coolcostupit.openjs.foliascheduler.EntitySchedulerImplementation;
+import coolcostupit.openjs.foliascheduler.GlobalSchedulerImplementation;
+import coolcostupit.openjs.foliascheduler.RegionSchedulerImplementation;
+import coolcostupit.openjs.foliascheduler.ServerImplementation;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.entity.Entity;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.plugin.Plugin;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.concurrent.CompletableFuture;
+
+@ApiStatus.Internal
+public class FoliaServer implements ServerImplementation {
+
+    private final @NotNull Plugin owningPlugin;
+    private final @NotNull FoliaGlobalScheduler globalScheduler;
+    private final @NotNull FoliaAsyncScheduler asyncScheduler;
+
+    @ApiStatus.Internal
+    public FoliaServer(@NotNull Plugin owningPlugin) {
+        this.owningPlugin = owningPlugin;
+        this.globalScheduler = new FoliaGlobalScheduler(owningPlugin);
+        this.asyncScheduler = new FoliaAsyncScheduler(owningPlugin);
+    }
+
+    @Override
+    public @NotNull Plugin getOwningPlugin() {
+        return owningPlugin;
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull Location location) {
+        return Bukkit.isOwnedByCurrentRegion(location);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull Location location, int squareRadiusChunks) {
+        return Bukkit.isOwnedByCurrentRegion(location, squareRadiusChunks);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull Block block) {
+        return Bukkit.isOwnedByCurrentRegion(block);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull World world, int chunkX, int chunkZ) {
+        return Bukkit.isOwnedByCurrentRegion(world, chunkX, chunkZ);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull World world, int chunkX, int chunkZ, int squareRadiusChunks) {
+        return Bukkit.isOwnedByCurrentRegion(world, chunkX, chunkZ, squareRadiusChunks);
+    }
+
+    @Override
+    public boolean isOwnedByCurrentRegion(@NotNull Entity entity) {
+        return Bukkit.isOwnedByCurrentRegion(entity);
+    }
+
+    @Override
+    public @NotNull GlobalSchedulerImplementation global() {
+        return globalScheduler;
+    }
+
+    @Override
+    public @NotNull AsyncSchedulerImplementation async() {
+        return asyncScheduler;
+    }
+
+    @Override
+    public @NotNull EntitySchedulerImplementation entity(@NotNull Entity entity) {
+        return new FoliaEntityScheduler(owningPlugin, entity);
+    }
+
+    @Override
+    public @NotNull RegionSchedulerImplementation region(@NotNull World world, int chunkX, int chunkZ) {
+        return new FoliaRegionScheduler(owningPlugin, world, chunkX, chunkZ);
+    }
+
+    @Override
+    public void cancelTasks() {
+        globalScheduler.cancelTasks();
+        asyncScheduler.cancelTasks();
+    }
+
+    @Override
+    public @NotNull CompletableFuture<Boolean> teleportAsync(@NotNull Entity entity, @NotNull Location location, @NotNull PlayerTeleportEvent.TeleportCause cause) {
+        return entity.teleportAsync(location, cause);
+    }
+}
