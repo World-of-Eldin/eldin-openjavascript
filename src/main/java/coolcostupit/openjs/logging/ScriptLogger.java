@@ -18,19 +18,15 @@ public class ScriptLogger {
         this.scriptName = scriptName;
     }
 
-    @SuppressWarnings("unused")
     private void log(Level level, String message) {
         logger.log(level, "[" + scriptName + "] " + message);
     }
-    @SuppressWarnings("unused")
     public void warn(String message) {
         log(Level.WARNING, message);
     }
-    @SuppressWarnings("unused")
     public void info(String message) {
         log(Level.INFO, message);
     }
-    @SuppressWarnings("unused")
     public void error(String message) {
         log(Level.SEVERE, message);
     }
