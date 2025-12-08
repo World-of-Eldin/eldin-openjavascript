@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.logging.Level;
 
 // TODO: Remove in 1.3.0 (Deprecated due to memory leak)
-@SuppressWarnings("all")
 public class VariableStorage {
     private final JavaPlugin plugin;
     private final File storageFile;
@@ -60,7 +59,6 @@ public class VariableStorage {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void loadVariables() {
         if (!storageFile.exists()) {
             return;

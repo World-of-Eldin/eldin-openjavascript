@@ -43,7 +43,6 @@ public class configurationUtil {
         saveConfig();
     }
 
-    @SuppressWarnings("unchecked")
     public <T> T getConfigFromBuffer(String configName, T defaultValue) {
         if (configBuffer.containsKey(configName)) {
             Object value = configBuffer.get(configName);

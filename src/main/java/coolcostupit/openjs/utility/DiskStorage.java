@@ -46,7 +46,8 @@ public class DiskStorage {
     // TODO: If saveFile operation is running on the file while trying to load it, load from the cache
     public void loadFile(String fileName, boolean async, String scriptName, boolean global) {
         Runnable task = () -> {
-            String fullName = (global ? fileName : scriptName + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
+            // For script-specific files, convert script path to safe filename (e.g., "utils/test.js" → "utils_test.js")
+            String fullName = (global ? fileName : ScriptPathUtils.toSafeFileName(scriptName) + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
             File file = new File(SAVE_DIR, fullName + ".dat");
             while (filesBeingSaved.contains(fullName)) {
                 try {
@@ -99,7 +100,8 @@ public class DiskStorage {
 
     public void saveFile(String fileName, boolean async, String scriptName, boolean global) {
         Runnable task = () -> {
-            String fullName = (global ? fileName : scriptName + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
+            // For script-specific files, convert script path to safe filename (e.g., "utils/test.js" → "utils_test.js")
+            String fullName = (global ? fileName : ScriptPathUtils.toSafeFileName(scriptName) + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
             if (!cache.containsKey(fullName)) return;
             if (!filesBeingSaved.add(fullName)) return; // Already saving
 
@@ -125,13 +127,15 @@ public class DiskStorage {
     }
 
     public String getValue(String scriptName, boolean global, String fileName, String valueName, String fallbackValue) {
-        String fullName = (global ? fileName : scriptName + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
+        // For script-specific files, convert script path to safe filename (e.g., "utils/test.js" → "utils_test.js")
+        String fullName = (global ? fileName : ScriptPathUtils.toSafeFileName(scriptName) + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
         Map<String, String> fileCache = cache.get(fullName);
         return fileCache.getOrDefault(valueName, fallbackValue);
     }
 
     public void setValue(String scriptName, boolean global, String fileName, String valueName, String value) {
-        String fullName = (global ? fileName : scriptName + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
+        // For script-specific files, convert script path to safe filename (e.g., "utils/test.js" → "utils_test.js")
+        String fullName = (global ? fileName : ScriptPathUtils.toSafeFileName(scriptName) + "_" + fileName).replaceAll("[^a-zA-Z0-9._-]", "_");
         if ("null".equals(value)) {
             Map<String, String> map = cache.get(fullName);
             if (map != null) {

@@ -6,7 +6,6 @@
 
 package coolcostupit.openjs.utility;
 
-@SuppressWarnings("unused")
 public class chatColors {
     // Color codes
     public static final String BLACK = "§0";

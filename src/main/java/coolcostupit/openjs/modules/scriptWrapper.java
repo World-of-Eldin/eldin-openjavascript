@@ -295,8 +295,6 @@ public class scriptWrapper {
         }
     }
 
-
-    @SuppressWarnings("all")
     public void saveDisabledScripts() {
         try (FileWriter writer = new FileWriter(disabledScriptsFile)) {
             JSONArray jsonArray = new JSONArray();
@@ -312,21 +310,22 @@ public class scriptWrapper {
         List<String> scriptsInFolder = new ArrayList<>();
 
         if (scriptsFolder.exists() && scriptsFolder.isDirectory()) {
-            for (File scriptFile : Objects.requireNonNull(scriptsFolder.listFiles())) {
-                if (scriptFile.isFile() && scriptFile.getName().endsWith(".js")) {
-                    scriptsInFolder.add(scriptFile.getName());
-                }
+            // Use recursive scan to find all scripts
+            List<File> allScripts = getAllScriptFiles(scriptsFolder);
+            for (File scriptFile : allScripts) {
+                String scriptId = ScriptPathUtils.getScriptIdentifier(scriptsFolder, scriptFile);
+                scriptsInFolder.add(scriptId);
             }
         }
 
         boolean modified = false;
         Iterator<String> iterator = disabledScripts.iterator();
         while (iterator.hasNext()) {
-            String scriptName = iterator.next();
-            if (!scriptsInFolder.contains(scriptName)) {
+            String scriptId = iterator.next();
+            if (!scriptsInFolder.contains(scriptId)) {
                 iterator.remove();
                 modified = true;
-                Logger.log(Level.INFO, "Removed non-existent script " + scriptName + " from disabled scripts list.", pluginLogger.BLUE);
+                Logger.log(Level.INFO, "Removed non-existent script " + scriptId + " from disabled scripts list.", pluginLogger.BLUE);
             }
         }
 
@@ -421,20 +420,48 @@ public class scriptWrapper {
             """.formatted(finalScript.toString());
     }
 
+    /**
+     * Recursively discovers all .js files in the scripts folder and subfolders
+     * @param directory Starting directory to scan
+     * @return List of all script files found (including subdirectories)
+     */
+    private List<File> getAllScriptFiles(File directory) {
+        List<File> scripts = new ArrayList<>();
+        File[] files = directory.listFiles();
+
+        if (files == null) {
+            return scripts; // Directory doesn't exist or I/O error
+        }
+
+        for (File file : files) {
+            if (file.isDirectory()) {
+                // Recurse into subdirectory
+                scripts.addAll(getAllScriptFiles(file));
+            } else if (file.isFile() && file.getName().endsWith(".js")) {
+                scripts.add(file);
+            }
+            // Ignore other file types
+        }
+
+        return scripts;
+    }
+
     public List<String> getNotLoadedScripts() {
         File scriptsFolder = new File(plugin.getDataFolder(), "scripts");
         List<String> notLoadedScripts = new ArrayList<>();
         if (scriptsFolder.exists() && scriptsFolder.isDirectory()) {
-            for (File scriptFile : Objects.requireNonNull(scriptsFolder.listFiles())) {
-                if (scriptFile.isFile() && scriptFile.getName().endsWith(".js") && !activeFiles.contains(scriptFile.getName()) && !disabledScripts.contains(scriptFile.getName())) {
-                    notLoadedScripts.add(scriptFile.getName());
+            // Use recursive scan to find all scripts
+            List<File> allScripts = getAllScriptFiles(scriptsFolder);
+            for (File scriptFile : allScripts) {
+                String scriptId = ScriptPathUtils.getScriptIdentifier(scriptsFolder, scriptFile);
+                if (!activeFiles.contains(scriptId) && !disabledScripts.contains(scriptId)) {
+                    notLoadedScripts.add(scriptId);
                 }
             }
         }
         return notLoadedScripts;
     }
 
-    @SuppressWarnings("all")
     public static class ScriptLoadResult { // this is ancient from 1.0.0 Alpha, may need to look into it
         private final boolean success;
         private final String message;
@@ -454,7 +481,10 @@ public class scriptWrapper {
     }
 
     public ScriptLoadResult loadScript(File scriptFile, boolean calledFromScript) {
-        if (scriptFile.isFile() && scriptFile.getName().endsWith(".js") && !disabledScripts.contains(scriptFile.getName())) {
+        File scriptsFolder = new File(plugin.getDataFolder(), "scripts");
+        String scriptId = ScriptPathUtils.getScriptIdentifier(scriptsFolder, scriptFile);
+
+        if (scriptFile.isFile() && scriptFile.getName().endsWith(".js") && !disabledScripts.contains(scriptId)) {
             if (calledFromScript) {
                 if (!hasInit || !scriptsReady) {
                     return new ScriptLoadResult(false, "Do not manually load scripts while they are being initialized!");
@@ -467,18 +497,17 @@ public class scriptWrapper {
                 }
             }
 
-            String ScriptName = scriptFile.getName();
-            unloadScript(ScriptName);
+            unloadScript(scriptId);
 
             ScriptEngine localScriptEngine = coolcostupit.openjs.modules.ScriptEngine.getEngine();
-            scriptEngines.put(ScriptName, localScriptEngine);
+            scriptEngines.put(scriptId, localScriptEngine);
 
             // Initialize the custom in-built stuff
             localScriptEngine.put("plugin", plugin);
             localScriptEngine.put("scriptManager", this); // TODO: Try to lazy-load this, loading it on every script is memory intensive
             localScriptEngine.put("scriptEngine", localScriptEngine);
-            localScriptEngine.put("currentScriptName", ScriptName);
-            localScriptEngine.put("log", new ScriptLogger(getLogger(), ScriptName));
+            localScriptEngine.put("currentScriptName", scriptId);
+            localScriptEngine.put("log", new ScriptLogger(getLogger(), scriptId));
             localScriptEngine.put("variableStorage", variableStorage);
             localScriptEngine.put("DiskStorage", sharedClass.DiskStorageApi);
             localScriptEngine.put("publicVarManager", PublicVarManager);
@@ -537,30 +566,30 @@ public class scriptWrapper {
                     List BridgesToLoad = FlagInterpreter.getFlags(scriptFile);
 
                     if (!BridgesToLoad.isEmpty()) {
-                        BridgeLoader.loadBridges(BridgesToLoad, ScriptName, localScriptEngine);
+                        BridgeLoader.loadBridges(BridgesToLoad, scriptId, localScriptEngine);
                     }
 
                     String processedScript = preprocessScript(scriptFile, localScriptEngine);
                     localScriptEngine.eval(processedScript);
                     if (configUtil.getConfigFromBuffer("PrintScriptActivations", true)) {
-                        Logger.log(Level.INFO, "Loaded the script " + ScriptName, pluginLogger.GREEN);
+                        Logger.log(Level.INFO, "Loaded the script " + scriptId, pluginLogger.GREEN);
                     }
                     FoliaSupport.runTaskSynchronously(plugin, () -> //plugin.getServer().getScheduler().runTask(plugin, () ->
-                            plugin.getServer().getPluginManager().callEvent(new ScriptLoadedEvent(ScriptName)));
+                            plugin.getServer().getPluginManager().callEvent(new ScriptLoadedEvent(scriptId)));
                 } catch (IOException | ScriptException e) {
-                    Logger.scriptlog(Level.WARNING,  ScriptName, "Failed to load script " + e.getMessage(), pluginLogger.ORANGE);
+                    Logger.scriptlog(Level.WARNING,  scriptId, "Failed to load script " + e.getMessage(), pluginLogger.ORANGE);
                 }
             });
 
-            if (!activeFiles.contains(ScriptName)) {
-                activeFiles.add(ScriptName);
+            if (!activeFiles.contains(scriptId)) {
+                activeFiles.add(scriptId);
             }
 
-            if (!runningScripts.contains(ScriptName)) {
-                runningScripts.add(ScriptName);
+            if (!runningScripts.contains(scriptId)) {
+                runningScripts.add(scriptId);
             }
 
-            scriptFutures.put(ScriptName, future);
+            scriptFutures.put(scriptId, future);
             return new ScriptLoadResult(true, "Script loaded successfully.");
         }
         return new ScriptLoadResult(false, "Invalid script file.");
@@ -572,7 +601,9 @@ public class scriptWrapper {
         if (scriptsFolder.exists() && scriptsFolder.isDirectory()) {
             List<Future<?>> futures = new ArrayList<>();
 
-            for (File scriptFile : Objects.requireNonNull(scriptsFolder.listFiles())) {
+            // Use recursive scan to find all scripts including those in subfolders
+            List<File> allScripts = getAllScriptFiles(scriptsFolder);
+            for (File scriptFile : allScripts) {
                 Future<?> future = executorService.submit(() -> loadScript(scriptFile, false));
                 futures.add(future);
             }
@@ -588,7 +619,6 @@ public class scriptWrapper {
     }
 
     // In-Build script functions: (HELPERS)
-    @SuppressWarnings("unused")
     public void registerCommand(String commandName, Object commandHandler, String scriptName, ScriptEngine scriptEngine, @Nullable String permission) {
         try {
             CommandMap commandMap = getCommandMap();
@@ -635,7 +665,6 @@ public class scriptWrapper {
         }
     }
 
-    @SuppressWarnings("unused")
     public void waitForInit() {
         while (!scriptsReady) {
             try {
@@ -649,7 +678,6 @@ public class scriptWrapper {
     }
 
     // TODO: Remove in 1.1.3 (In favor of taskApi)
-    @SuppressWarnings("all")
     public void registerSchedule(String scriptName, long delay, long period, Object handler, ScriptEngine scriptEngine, String methodName) {
         Logger.scriptlog(Level.WARNING, scriptName, "Do not use registerSchedule! This will get removed soon, use task.repeat instead!", pluginLogger.ORANGE);
         Runnable task = () -> {
@@ -670,7 +698,6 @@ public class scriptWrapper {
         scriptTasksMap.computeIfAbsent(scriptName, k -> new ArrayList<>()).add(Integer.valueOf(taskId));
     }
 
-    @SuppressWarnings("unused")
     public Listener registerEvent(String eventClassName, Object handler, String scriptName, ScriptEngine scriptEngine) {
         try {
             Class<?> eventClass = Class.forName(eventClassName);

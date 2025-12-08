@@ -29,8 +29,36 @@ OpenJS embeds a JavaScript engine into the server and exposes server-side APIs. 
 
 ## Getting started
 
-Documentation for writing scripts, using server APIs, and managing scripts is available at:  
+Documentation for writing scripts, using server APIs, and managing scripts is available at:
 [Documentation](https://docs-mc-1.gitbook.io/openjs-docs)
 
-Need help?  
+Need help?
 Join the Discord community: [https://discord.gg/XuRC4at2Ha](https://discord.gg/XuRC4at2Ha)
+
+---
+
+## Organizing scripts
+
+Scripts can be organized into subfolders within the `plugins/OpenJS/scripts/` directory for better structure:
+
+```
+plugins/OpenJS/scripts/
+├── utilities/
+│   ├── math.js
+│   └── string.js
+├── events/
+│   ├── player.js
+│   └── world.js
+└── commands/
+    └── admin.js
+```
+
+Scripts in subfolders work identically to root-level scripts. Use relative paths when referencing scripts:
+
+```javascript
+// Load a script from a subfolder
+LoadScript("utilities/math.js");
+
+// Unload a script
+UnloadScript("events/player.js");
+```

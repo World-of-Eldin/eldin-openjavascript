@@ -36,7 +36,6 @@ import java.util.logging.Level;
 // Anyway, I haven't put out many comments because I was way too focused or just lazy to write them
 // enjoy reading this code, I don't know why I just wrote this, nobody is going to see this anyway (unless I open-sourced this? Why? Hmmm "Open"Js)
 
-//@SuppressWarnings("unused")
 public class OpenJSPlugin extends JavaPlugin implements TabExecutor, TabCompleter, Listener {
     public configurationUtil configUtil;
     private pluginLogger pluginLogger;
@@ -46,7 +45,6 @@ public class OpenJSPlugin extends JavaPlugin implements TabExecutor, TabComplete
     private UpdateChecker updateChecker;
 
     @Override
-    @SuppressWarnings("all")
     public void onEnable() {
         Server server = getServer();
         PluginManager pluginManager = server.getPluginManager();
