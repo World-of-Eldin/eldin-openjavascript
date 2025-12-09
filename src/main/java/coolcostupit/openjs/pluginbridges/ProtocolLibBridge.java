@@ -14,8 +14,10 @@ import coolcostupit.openjs.logging.pluginLogger;
 import coolcostupit.openjs.modules.scriptWrapper;
 import coolcostupit.openjs.modules.sharedClass;
 
-import javax.script.Invocable;
-import javax.script.ScriptEngine;
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.exceptions.JavetException;
+import com.caoccao.javet.values.reference.V8ValueFunction;
+import com.caoccao.javet.values.reference.V8ValueObject;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -27,11 +29,11 @@ public class ProtocolLibBridge {
     private final Map<Object, PacketListener> scriptListeners = new ConcurrentHashMap<>();
     private final Map<String, List<PacketListener>> TotalScriptListeners = new ConcurrentHashMap<>();
 
-    public final ScriptEngine engine;
+    public final V8Runtime engine;
     public final String scriptName;
     public final pluginLogger Logger;
 
-    public ProtocolLibBridge(ScriptEngine engine, String scriptName) {
+    public ProtocolLibBridge(V8Runtime engine, String scriptName) {
         this.engine = engine;
         this.scriptName = scriptName;
         this.Logger = sharedClass.logger;
@@ -78,8 +80,13 @@ public class ProtocolLibBridge {
 
     private void invokeJS(Object handler, String method, PacketEvent event) {
         try {
-            ((Invocable) engine).invokeMethod(handler, method, event);
-        } catch (Exception e) {
+            V8ValueObject handlerObj = (V8ValueObject) handler;
+            try (V8ValueFunction methodFn = handlerObj.get(method)) {
+                if (!methodFn.isUndefined()) {
+                    methodFn.callVoid(handlerObj, event);
+                }
+            }
+        } catch (JavetException e) {
             Logger.scriptlog(Level.WARNING, scriptName, "[ProtocolLib] " + method + " failed: " + e.getMessage(), pluginLogger.ORANGE);
         }
     }

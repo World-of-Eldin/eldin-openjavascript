@@ -54,8 +54,13 @@ public class OpenJSPlugin extends JavaPlugin implements TabExecutor, TabComplete
         this.variableStorage = new VariableStorage(this);
         this.DiskStorageApi = new DiskStorage(this);
 
-        if (ScriptEngine.getEngine() == null) {
-            pluginLogger.log(Level.SEVERE, "Failed to initialize JavaScript engine. Disabling plugin.", pluginLogger.RED);
+        // Validate that Javet (V8) engine is available
+        try {
+            com.caoccao.javet.interop.V8Runtime testRuntime = ScriptEngine.getEngine();
+            testRuntime.close();
+        } catch (Exception e) {
+            pluginLogger.log(Level.SEVERE, "Failed to initialize Javet V8 JavaScript engine: " + e.getMessage(), pluginLogger.RED);
+            pluginLogger.log(Level.SEVERE, "Make sure you're running on a supported platform (Linux x64/ARM64, Windows x64, macOS x64/ARM64)", pluginLogger.RED);
             getServer().getPluginManager().disablePlugin(this);
             return;
         }

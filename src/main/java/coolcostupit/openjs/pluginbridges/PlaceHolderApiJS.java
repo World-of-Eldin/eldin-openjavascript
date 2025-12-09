@@ -12,8 +12,10 @@ import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
-import javax.script.Invocable;
-import javax.script.ScriptEngine;
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.exceptions.JavetException;
+import com.caoccao.javet.values.reference.V8ValueFunction;
+import com.caoccao.javet.values.reference.V8ValueObject;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -23,10 +25,10 @@ public class PlaceHolderApiJS {
 
     public static class PlaceholderData {
         public final Object handler;
-        public final ScriptEngine engine;
+        public final V8Runtime engine;
         public final String scriptName;
 
-        public PlaceholderData(Object handler, ScriptEngine engine, String scriptName) {
+        public PlaceholderData(Object handler, V8Runtime engine, String scriptName) {
             this.handler = handler;
             this.engine = engine;
             this.scriptName = scriptName;
@@ -40,7 +42,7 @@ public class PlaceHolderApiJS {
         return PlaceholderAPI.setPlaceholders(player, text);
     }
 
-    public void registerPlaceholder(String prefix, Object handler, String scriptName, ScriptEngine engine) {
+    public void registerPlaceholder(String prefix, Object handler, String scriptName, V8Runtime engine) {
         if (registeredPlaceholders.containsKey(prefix)) {
             sharedClass.logger.log(Level.WARNING, "[" + scriptName + "] Placeholder %" + sharedClass.Identifier + "_" + prefix + "% already exists and will be overwritten.", pluginLogger.ORANGE);
         }
@@ -81,8 +83,14 @@ public class PlaceHolderApiJS {
         PlaceholderData data = registeredPlaceholders.get(prefix);
         if (data == null) return null;
         try {
-            return (String) ((Invocable) data.engine).invokeMethod(data.handler, "onRequest", player, params);
-        } catch (Exception e) {
+            V8ValueObject handlerObj = (V8ValueObject) data.handler;
+            try (V8ValueFunction onRequestFn = handlerObj.get("onRequest")) {
+                if (!onRequestFn.isUndefined()) {
+                    return (String) onRequestFn.callObject(handlerObj, player, params);
+                }
+            }
+            return null;
+        } catch (JavetException e) {
             sharedClass.logger.log(Level.SEVERE, "[" + data.scriptName + "] Error invoking placeholder %" + sharedClass.Identifier + "_" + prefix + "% reason: " + e.getMessage(), pluginLogger.RED);
             return null;
         }

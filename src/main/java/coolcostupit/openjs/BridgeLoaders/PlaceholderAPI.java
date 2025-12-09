@@ -11,13 +11,14 @@ import coolcostupit.openjs.modules.scriptWrapper;
 import coolcostupit.openjs.modules.sharedClass;
 import coolcostupit.openjs.pluginbridges.PlaceHolderApiJS;
 
-import javax.script.ScriptEngine;
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.values.reference.V8ValueObject;
 import java.util.logging.Level;
 
 public class PlaceholderAPI {
     public static PlaceHolderApiJS placeholderApiJS;
 
-    public void Load(String ScriptName, ScriptEngine Engine) {
+    public void Load(String ScriptName, V8Runtime Engine) {
         try {
             // Lazy loader for PlaceholderApi support
             if (placeholderApiJS == null) {
@@ -29,8 +30,9 @@ public class PlaceholderAPI {
                 }
             }
 
-            Engine.put("PlaceholderAPI_", placeholderApiJS);
-            Engine.eval("""
+            V8ValueObject globalObject = Engine.getGlobalObject();
+            globalObject.set("PlaceholderAPI_", placeholderApiJS);
+            Engine.getExecutor("""
                 const PlaceholderAPI = {
                     registerPlaceholder: function(placeholderPrefix, handler) {
                         PlaceholderAPI_.registerPlaceholder(placeholderPrefix, handler, currentScriptName, scriptEngine);
@@ -43,7 +45,7 @@ public class PlaceholderAPI {
                     }
                 }
                 Object.freeze(PlaceholderAPI);
-            """);
+            """).executeVoid();
 
             scriptWrapper.addToCleanupMap(ScriptName, () -> {
                 placeholderApiJS.unregisterPlaceholders(ScriptName);

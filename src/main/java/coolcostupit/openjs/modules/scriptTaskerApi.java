@@ -6,22 +6,24 @@
 
 package coolcostupit.openjs.modules;
 
-import coolcostupit.openjs.logging.pluginLogger;
-import org.bukkit.Bukkit;
-import org.bukkit.entity.Entity;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.PluginManager;
-import org.jetbrains.annotations.NotNull;
-
-import javax.script.Invocable;
-import javax.script.ScriptEngine;
-import javax.script.ScriptException;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
+
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Entity;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginManager;
+import org.jetbrains.annotations.NotNull;
+
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.values.reference.V8ValueFunction;
+import com.caoccao.javet.values.reference.V8ValueObject;
+
+import coolcostupit.openjs.logging.pluginLogger;
 
 public class scriptTaskerApi {
     private final scriptWrapper ScriptWrapper;
@@ -31,10 +33,10 @@ public class scriptTaskerApi {
 
     private static class ListenerEntry {
         public final String scriptName;
-        public final Object cleanup;
-        public final ScriptEngine scriptEngine;
+        public final V8ValueObject cleanup;
+        public final V8Runtime scriptEngine;
 
-        public ListenerEntry(String scriptName, ScriptEngine scriptEngine, Object cleanup) {
+        public ListenerEntry(String scriptName, V8Runtime scriptEngine, V8ValueObject cleanup) {
             this.scriptName = scriptName;
             this.cleanup = cleanup;
             this.scriptEngine = scriptEngine;
@@ -47,7 +49,7 @@ public class scriptTaskerApi {
         this.Logger = sharedClass.logger;
     }
 
-    public Boolean wait(String scriptName, ScriptEngine scriptEngine, Number seconds) {
+    public Boolean wait(String scriptName, V8Runtime scriptEngine, Number seconds) {
         double sec = seconds.doubleValue();
 
         if (sec <= 0) return Boolean.TRUE;
@@ -109,12 +111,29 @@ public class scriptTaskerApi {
         }
     }
 
-    public int spawn(String scriptName, ScriptEngine scriptEngine, Object handler) {
+    public int spawn(String scriptName, V8Runtime scriptEngine, V8ValueObject handler) {
+        // Store function wrapper in global scope for cross-thread access
+        String handlerId = "__task_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.scriptlog(Level.SEVERE, scriptName, "Failed to register task: " + e.getMessage(), pluginLogger.RED);
+            return 0;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, "f");
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.scriptlog(Level.WARNING, scriptName, e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.f === 'function') {
+                            handler.f();
+                        }
+                    })();
+                    """, handlerId
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Task execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
         int taskId = FoliaSupport.runTask(sharedClass.plugin, task);
@@ -123,12 +142,28 @@ public class scriptTaskerApi {
         return taskId;
     }
 
-    public int entitySchedule(String scriptName, ScriptEngine scriptEngine, Entity entity, Object handler) {
+    public int entitySchedule(String scriptName, V8Runtime scriptEngine, Entity entity, V8ValueObject handler) {
+        String handlerId = "__task_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.scriptlog(Level.SEVERE, scriptName, "Failed to register entity task: " + e.getMessage(), pluginLogger.RED);
+            return 0;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, "f");
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.scriptlog(Level.WARNING, scriptName, e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.f === 'function') {
+                            handler.f();
+                        }
+                    })();
+                    """, handlerId
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Entity task execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
         int taskId = FoliaSupport.runEntityTask(sharedClass.plugin, entity, task);
@@ -137,12 +172,28 @@ public class scriptTaskerApi {
         return taskId;
     }
 
-    public int main(String scriptName, ScriptEngine scriptEngine, Object handler) {
+    public int main(String scriptName, V8Runtime scriptEngine, V8ValueObject handler) {
+        String handlerId = "__task_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.scriptlog(Level.SEVERE, scriptName, "Failed to register main task: " + e.getMessage(), pluginLogger.RED);
+            return 0;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, "f");
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.scriptlog(Level.WARNING, scriptName, e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.f === 'function') {
+                            handler.f();
+                        }
+                    })();
+                    """, handlerId
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Main task execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
         int taskId = FoliaSupport.runTaskSynchronously(sharedClass.plugin, task);
@@ -151,17 +202,34 @@ public class scriptTaskerApi {
         return taskId;
     }
 
-    public int delay(String scriptName, ScriptEngine scriptEngine, Number Delay, Object handler) {
+    public int delay(String scriptName, V8Runtime scriptEngine, Number Delay, V8ValueObject handler) {
         double sec = Delay.doubleValue();
 
         if (sec <= 0) return 0;
         long ticks = (long) (sec * 20); // Convert seconds to ticks
 
+        String handlerId = "__task_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.scriptlog(Level.SEVERE, scriptName, "Failed to register delayed task: " + e.getMessage(), pluginLogger.RED);
+            return 0;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, "f");
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.scriptlog(Level.WARNING, scriptName, e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.f === 'function') {
+                            handler.f();
+                        }
+                        delete globalThis.%s;
+                    })();
+                    """, handlerId, handlerId
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Delayed task execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
 
@@ -171,7 +239,7 @@ public class scriptTaskerApi {
         return taskId;
     }
 
-    public int repeat(String scriptName, ScriptEngine scriptEngine, Number Delay, Number Period, Object handler) {
+    public int repeat(String scriptName, V8Runtime scriptEngine, Number Delay, Number Period, V8ValueObject handler) {
         double delaySec = Delay.doubleValue();
         double periodSec = Period.doubleValue();
 
@@ -183,11 +251,27 @@ public class scriptTaskerApi {
         long delayTicks = (long) (delaySec * 20);   // Delay before first run
         long periodTicks = (long) (periodSec * 20); // Interval between runs
 
+        String handlerId = "__task_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.scriptlog(Level.SEVERE, scriptName, "Failed to register repeating task: " + e.getMessage(), pluginLogger.RED);
+            return 0;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, "f");
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.scriptlog(Level.WARNING, scriptName, e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.f === 'function') {
+                            handler.f();
+                        }
+                    })();
+                    """, handlerId
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Repeating task execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
 
@@ -197,11 +281,26 @@ public class scriptTaskerApi {
         return taskId;
     }
 
-    public void cleanupListener(String scriptName, ScriptEngine scriptEngine, Object handler) {
+    public void cleanupListener(String scriptName, V8Runtime scriptEngine, V8ValueObject handler) {
         try {
             Logger.log(Level.INFO, "[" + scriptName + "] Listener cleanup executed.", pluginLogger.LIGHT_BLUE);
-            ((Invocable) scriptEngine).invokeMethod(handler, "f");
-        } catch (ScriptException | NoSuchMethodException e) {
+
+            String handlerId = "__cleanup_" + System.nanoTime();
+            try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                globalObject.set(handlerId, handler);
+            }
+
+            scriptEngine.getExecutor(String.format("""
+                (function() {
+                    const handler = globalThis.%s;
+                    if (handler && typeof handler.f === 'function') {
+                        handler.f();
+                    }
+                    delete globalThis.%s;
+                })();
+                """, handlerId, handlerId
+            )).executeVoid();
+        } catch (Exception e) {
             Logger.scriptlog(Level.WARNING, scriptName, "Listener cleanup failed: " + e.getMessage(), pluginLogger.RED);
         }
     }
@@ -245,38 +344,46 @@ public class scriptTaskerApi {
         toRemove.forEach(listenerCleanupMap::remove);
     }
 
-    public <T> Object createListener(String scriptName, ScriptEngine engine, Class<T> interfaceClass, Object jsHandler) {
-        if (!(engine instanceof Invocable)) {
-            Logger.log(Level.WARNING, "Script engine is not invocable. Cannot bind handler.", pluginLogger.RED);
+    public <T> Object createListener(String scriptName, V8Runtime engine, Class<T> interfaceClass, V8ValueObject jsHandler) {
+        try {
+            Object proxy = Proxy.newProxyInstance(
+                    interfaceClass.getClassLoader(),
+                    new Class<?>[]{interfaceClass},
+                    (p, method, args) -> {
+                        try {
+                            // Try to get the method from the JavaScript object
+                            try (com.caoccao.javet.values.reference.V8ValueFunction fn = jsHandler.get(method.getName())) {
+                                if (fn != null && !fn.isUndefined()) {
+                                    return fn.callObject(jsHandler, args);
+                                }
+                            }
+                            // Method not found - return default value
+                            if (method.getReturnType().isPrimitive()) {
+                                if (method.getReturnType() == boolean.class) return false;
+                                if (method.getReturnType() == char.class) return '\0';
+                                return 0;
+                            }
+                            return null;
+                        } catch (Exception e) {
+                            Logger.log(Level.SEVERE, "Listener handler error: " + e.getMessage(), pluginLogger.RED);
+                            if (method.getReturnType().isPrimitive()) {
+                                if (method.getReturnType() == boolean.class) return false;
+                                if (method.getReturnType() == char.class) return '\0';
+                                return 0;
+                            }
+                            return null;
+                        }
+                    }
+            );
+
+            return proxy;
+        } catch (Exception e) {
+            Logger.log(Level.SEVERE, "Failed to create listener proxy: " + e.getMessage(), pluginLogger.RED);
             return null;
         }
-
-        Invocable inv = (Invocable) engine;
-
-        Object proxy = Proxy.newProxyInstance(
-                interfaceClass.getClassLoader(),
-                new Class<?>[]{interfaceClass},
-                (p, method, args) -> {
-                    try {
-                        return inv.invokeMethod(jsHandler, method.getName(), args);
-                    } catch (NoSuchMethodException e) {
-                        if (method.getReturnType().isPrimitive()) {
-                            if (method.getReturnType() == boolean.class) return false;
-                            if (method.getReturnType() == char.class) return '\0';
-                            return 0;
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        Logger.log(Level.SEVERE, "Listener handler error: " + e.getMessage(), pluginLogger.RED);
-                        return null;
-                    }
-                }
-        );
-
-        return proxy;
     }
 
-    public void setListenerCleanup(String scriptName, ScriptEngine scriptEngine, Object proxy, Object cleanup) {
+    public void setListenerCleanup(String scriptName, V8Runtime scriptEngine, Object proxy, V8ValueObject cleanup) {
         if (cleanup != null) {
             listenerCleanupMap.put(proxy, new ListenerEntry(scriptName, scriptEngine, cleanup));
         } else {

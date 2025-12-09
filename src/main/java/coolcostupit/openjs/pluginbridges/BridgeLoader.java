@@ -10,7 +10,7 @@ import com.comphenix.protocol.PacketType;
 import coolcostupit.openjs.logging.pluginLogger;
 import coolcostupit.openjs.modules.sharedClass;
 
-import javax.script.ScriptEngine;
+import com.caoccao.javet.interop.V8Runtime;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.ArrayList;
@@ -21,14 +21,14 @@ public class BridgeLoader {
     private static final String BRIDGE_PACKAGE = "coolcostupit.openjs.BridgeLoaders";
     private static final pluginLogger Logger = sharedClass.logger;
 
-    public static void loadBridges(List<String> bridgesToLoad, String scriptName, ScriptEngine engine) {
+    public static void loadBridges(List<String> bridgesToLoad, String scriptName, V8Runtime engine) {
         for (String bridgeName : bridgesToLoad) {
             try {
                 // Full class name (package + class name)
                 String className = BRIDGE_PACKAGE + "." + bridgeName;
                 Class<?> clazz = Class.forName(className);
                 Object bridgeInstance = clazz.getDeclaredConstructor().newInstance(); // Create an instance (must have public no-arg constructor)
-                Method loadMethod = clazz.getMethod("Load", String.class, ScriptEngine.class);
+                Method loadMethod = clazz.getMethod("Load", String.class, V8Runtime.class);
                 loadMethod.invoke(bridgeInstance, scriptName, engine);
                 //Logger.scriptlog(Level.INFO, scriptName, "[BridgeLoader] Loaded bridge: " + bridgeName, pluginLogger.LIGHT_BLUE);
             } catch (ClassNotFoundException e) {

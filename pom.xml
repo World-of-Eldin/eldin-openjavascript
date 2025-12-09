@@ -16,11 +16,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <graaljs.version>24.1.0</graaljs.version>
     </properties>
 
     <repositories>
-        <!-- Maven Central (for GraalJS) -->
+        <!-- Maven Central (for Javet and other dependencies) -->
         <repository>
             <id>central</id>
             <url>https://repo1.maven.org/maven2/</url>
@@ -59,6 +58,42 @@
     </repositories>
 
     <dependencies>
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet</artifactId>
+            <version>5.0.2</version>
+        </dependency>
+        <!-- V8 Native Libraries for different platforms -->
+        <!-- Linux (x86_64) -->
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet-v8-linux-x86_64</artifactId>
+            <version>5.0.2</version>
+        </dependency>
+        <!-- Linux (ARM64) -->
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet-v8-linux-arm64</artifactId>
+            <version>5.0.2</version>
+        </dependency>
+        <!-- Windows (x86_64) -->
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet-v8-windows-x86_64</artifactId>
+            <version>5.0.2</version>
+        </dependency>
+        <!-- macOS (x86_64) -->
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet-v8-macos-x86_64</artifactId>
+            <version>5.0.2</version>
+        </dependency>
+        <!-- macOS (ARM64 / M1/M2/M3) -->
+        <dependency>
+            <groupId>com.caoccao.javet</groupId>
+            <artifactId>javet-v8-macos-arm64</artifactId>
+            <version>5.0.2</version>
+        </dependency>
         <!-- Paper API (includes Folia support) -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
@@ -66,25 +101,6 @@
             <version>1.20.4-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-
-        <!-- GraalVM JavaScript Engine -->
-        <dependency>
-            <groupId>org.graalvm.polyglot</groupId>
-            <artifactId>polyglot</artifactId>
-            <version>${graaljs.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.polyglot</groupId>
-            <artifactId>js</artifactId>
-            <version>${graaljs.version}</version>
-            <type>pom</type>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.js</groupId>
-            <artifactId>js-scriptengine</artifactId>
-            <version>${graaljs.version}</version>
-        </dependency>
-
         <!-- PlaceholderAPI (soft dependency) -->
         <dependency>
             <groupId>me.clip</groupId>
@@ -92,7 +108,6 @@
             <version>2.11.5</version>
             <scope>provided</scope>
         </dependency>
-
         <!-- ProtocolLib (soft dependency) -->
         <dependency>
             <groupId>com.comphenix.protocol</groupId>
@@ -100,7 +115,6 @@
             <version>5.3.0</version>
             <scope>provided</scope>
         </dependency>
-
         <!-- bStats -->
         <dependency>
             <groupId>org.bstats</groupId>
@@ -108,7 +122,6 @@
             <version>3.0.2</version>
             <scope>compile</scope>
         </dependency>
-
         <!-- JetBrains Annotations -->
         <dependency>
             <groupId>org.jetbrains</groupId>
@@ -116,14 +129,12 @@
             <version>24.0.1</version>
             <scope>provided</scope>
         </dependency>
-
         <!-- Apache HttpClient (for UpdateChecker) -->
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
             <version>4.5.14</version>
         </dependency>
-
         <!-- Reflection Remapper (for FoliaScheduler compatibility) -->
         <dependency>
             <groupId>xyz.jpenilla</groupId>
@@ -154,7 +165,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Shade Plugin - Bundle GraalJS and dependencies -->
+            <!-- Shade Plugin - Bundle Nashorn and dependencies -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -172,7 +183,7 @@
                                     <pattern>org.bstats</pattern>
                                     <shadedPattern>coolcostupit.openjs.bstats</shadedPattern>
                                 </relocation>
-                                <!-- Do NOT relocate GraalVM/Truffle - they need original package names for ServiceLoader -->
+                                <!-- Javet can be safely relocated if needed, but we'll keep original packages -->
                             </relocations>
                             <filters>
                                 <filter>
@@ -185,7 +196,7 @@
                                 </filter>
                             </filters>
                             <transformers>
-                                <!-- Merge service files for GraalJS ServiceLoader -->
+                                <!-- Merge service files -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                         </configuration>

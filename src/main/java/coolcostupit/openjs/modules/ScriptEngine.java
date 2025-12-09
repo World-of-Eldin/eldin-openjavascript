@@ -6,38 +6,47 @@
 
 package coolcostupit.openjs.modules;
 
-import com.oracle.truffle.js.scriptengine.GraalJSScriptEngine;
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Engine;
-import org.graalvm.polyglot.HostAccess;
+import com.caoccao.javet.exceptions.JavetException;
+import com.caoccao.javet.interception.jvm.JavetJVMInterceptor;
+import com.caoccao.javet.interop.V8Host;
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.interop.converters.JavetProxyConverter;
 
 public class ScriptEngine {
-    private static Engine graalEngine;
 
     /**
-     * Get a new GraalJS ScriptEngine instance with Nashorn compatibility mode enabled.
-     * Each call returns a fresh engine instance for script isolation.
+     * Get a new Javet V8Runtime instance with V8 backend.
+     * Each call returns a fresh runtime instance for script isolation.
+     * Supports modern ECMAScript 2024+ features including:
+     * - async/await
+     * - optional chaining (?.)
+     * - BigInt
+     * - const/let/arrow functions
+     * - classes and modules
+     * - and all other ES2024 features
      *
-     * @return A new javax.script.ScriptEngine instance backed by GraalJS
+     * @return A new V8Runtime instance with V8 backend
+     * @throws JavetException if the runtime cannot be created
      */
-    public static javax.script.ScriptEngine getEngine() {
-        if (graalEngine == null) {
-            // Create a shared GraalVM engine for better performance
-            // The engine can be shared across contexts while each ScriptEngine gets its own Context
-            graalEngine = Engine.newBuilder()
-                    .allowExperimentalOptions(true)
-                    .option("engine.WarnInterpreterOnly", "false")
-                    .build();
+    public static V8Runtime getEngine() throws JavetException {
+        // Create V8Runtime directly (not using engine pool for better interceptor compatibility)
+        V8Runtime runtime = V8Host.getV8Instance().createV8Runtime();
+
+        // Set up proxy converter for seamless Java-JS object conversion
+        JavetProxyConverter proxyConverter = new JavetProxyConverter();
+        runtime.setConverter(proxyConverter);
+
+        // Create and register the JVM interceptor for Java class access
+        // IMPORTANT: We must keep a reference to prevent garbage collection
+        JavetJVMInterceptor javetJVMInterceptor = new JavetJVMInterceptor(runtime);
+        try (com.caoccao.javet.values.reference.V8ValueObject globalObject = runtime.getGlobalObject()) {
+            javetJVMInterceptor.register(globalObject);
+
+            // Store the interceptor as a private property to prevent GC
+            // This is crucial - without this, the interceptor gets garbage collected
+            globalObject.setPrivateProperty("__jvmInterceptor", javetJVMInterceptor);
         }
 
-        // Create a new ScriptEngine with Nashorn compatibility mode
-        // This ensures existing scripts using Java.type(), Java.to(), etc. continue to work
-        return GraalJSScriptEngine.create(graalEngine,
-                Context.newBuilder("js")
-                        .allowExperimentalOptions(true)
-                        .allowHostAccess(HostAccess.ALL)
-                        .allowHostClassLookup(className -> true)
-                        .option("js.nashorn-compat", "true")
-                        .option("js.ecmascript-version", "2022"));
+        return runtime;
     }
 }

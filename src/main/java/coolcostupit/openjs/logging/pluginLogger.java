@@ -6,13 +6,14 @@
 
 package coolcostupit.openjs.logging;
 
-import coolcostupit.openjs.utility.chatColors;
-import coolcostupit.openjs.utility.configurationUtil;
-import org.bukkit.plugin.java.JavaPlugin;
-
 import java.util.Collections;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import org.bukkit.plugin.java.JavaPlugin;
+
+import coolcostupit.openjs.utility.chatColors;
+import coolcostupit.openjs.utility.configurationUtil;
 
 public class pluginLogger {
 
@@ -22,6 +23,8 @@ public class pluginLogger {
     public static final String BLUE = "\u001B[34m";
     public static final String LIGHT_BLUE = "\u001B[38;5;81m";
     public static final String ORANGE = "\u001B[38;5;214m";
+    public static final String YELLOW = "\u001B[33m";
+    public static final String CYAN = "\u001B[36m";
 
     // Special indicators
     public static final String yieldKill = "_殺了我ͶͶ";

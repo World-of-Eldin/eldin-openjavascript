@@ -27,8 +27,44 @@ public class JavascriptHelper {
                 });
                 
                 const toArray = args => Array.prototype.slice.call(args);
-                const toJavaList = data => Java.to(data, 'java.util.List');
-                
+                // Javet handles Java/JavaScript type conversion automatically
+                const toJavaList = data => data;
+
+                // Java utility object for compatibility with GraalJS scripts
+                const Java = {
+                    // Convert Java collections/arrays to JavaScript arrays
+                    from: function(javaCollection) {
+                        if (javaCollection === null || javaCollection === undefined) {
+                            return [];
+                        }
+                        // Javet automatically converts Java arrays and collections to JS arrays
+                        // But we provide this for compatibility
+                        if (Array.isArray(javaCollection)) {
+                            return javaCollection;
+                        }
+                        // Try to convert iterable
+                        try {
+                            return Array.from(javaCollection);
+                        } catch (e) {
+                            // Fallback: try to iterate manually
+                            const result = [];
+                            const iter = javaCollection.iterator();
+                            while (iter.hasNext()) {
+                                result.push(iter.next());
+                            }
+                            return result;
+                        }
+                    },
+                    // Load a Java class by name (alternative to package notation)
+                    type: function(className) {
+                        try {
+                            return java.lang.Class.forName(className);
+                        } catch (e) {
+                            throw new Error('Class not found: ' + className);
+                        }
+                    }
+                };
+
                 const addCommand = (commandName, commandHandler, permission = "") => {
                   if (typeof permission !== "string") permission = "";
                   scriptManager.registerCommand(commandName.toLowerCase(), commandHandler, currentScriptName, scriptEngine, permission);
@@ -128,9 +164,7 @@ public class JavascriptHelper {
                     DiskStorage.setValue(currentScriptName, global, fileName, valueName, JSON.stringify(value));
                   }
                 });
-                
-                const waitForScript = _task.waitForScript;
-                
+
                 const task = Object.freeze({
                   wait(seconds) {
                     const continueRunning = _task.wait(currentScriptName, scriptEngine, parseFloat(seconds));
@@ -138,7 +172,9 @@ public class JavascriptHelper {
                       throw new Error('%s');
                     }
                   },
-                  waitForScript: waitForScript,
+                  waitForScript(scriptName) {
+                    _task.waitForScript(scriptName);
+                  },
                   waitForPlugin(pluginName) {
                     _task.waitForPlugin(pluginName, currentScriptName);
                   },

@@ -6,12 +6,31 @@
 
 package coolcostupit.openjs.modules;
 
-import coolcostupit.openjs.events.ScriptLoadedEvent;
-import coolcostupit.openjs.events.ScriptUnloadedEvent;
-import coolcostupit.openjs.logging.ScriptLogger;
-import coolcostupit.openjs.logging.pluginLogger;
-import coolcostupit.openjs.pluginbridges.BridgeLoader;
-import coolcostupit.openjs.utility.*;
+import static org.bukkit.Bukkit.getLogger;
+import static org.bukkit.Bukkit.getServer;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.logging.Level;
+
+import javax.annotation.Nullable;
+
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
@@ -27,23 +46,22 @@ import org.json.simple.JSONArray;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import javax.annotation.Nullable;
-import javax.script.ScriptEngine;
-import javax.script.*;
-import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.logging.Level;
+import com.caoccao.javet.exceptions.JavetException;
+import com.caoccao.javet.interop.V8Runtime;
+import com.caoccao.javet.values.reference.V8ValueFunction;
+import com.caoccao.javet.values.reference.V8ValueObject;
 
-import static org.bukkit.Bukkit.getLogger;
-import static org.bukkit.Bukkit.getServer;
+import coolcostupit.openjs.events.ScriptLoadedEvent;
+import coolcostupit.openjs.events.ScriptUnloadedEvent;
+import coolcostupit.openjs.logging.ScriptLogger;
+import coolcostupit.openjs.logging.pluginLogger;
+import coolcostupit.openjs.pluginbridges.BridgeLoader;
+import coolcostupit.openjs.utility.FlagInterpreter;
+import coolcostupit.openjs.utility.JavascriptHelper;
+import coolcostupit.openjs.utility.ScriptPathUtils;
+import coolcostupit.openjs.utility.VariableStorage;
+import coolcostupit.openjs.utility.chatColors;
+import coolcostupit.openjs.utility.configurationUtil;
 
 // this is the main stuff, but I haven't added many to no comments because I was way too focused when coding all that
 public class scriptWrapper {
@@ -52,7 +70,7 @@ public class scriptWrapper {
     private final Map<String, List<Listener>> eventListenersMap = new HashMap<>();
     public final Map<String, List<Integer>> scriptTasksMap = new HashMap<>();
     private final Map<String, Future<?>> scriptFutures = new HashMap<>();
-    private final Map<String, ScriptEngine> scriptEngines = new HashMap<>();
+    private final Map<String, V8Runtime> scriptEngines = new HashMap<>();
     private final Map<String, List<Command>> scriptCommands = new HashMap<>();
     private static final Map<String, List<Runnable>> cleanUpMethods = new ConcurrentHashMap<>();
     private final JavaPlugin plugin;
@@ -76,8 +94,8 @@ public class scriptWrapper {
         this.executorService = Executors.newCachedThreadPool();
         this.taskApi = new scriptTaskerApi(this);
 
-        // GraalJS is configured with ECMAScript 2022 support in ScriptEngine.java
-        // No system properties needed for language version
+        // Javet is configured with V8 backend in ScriptEngine.java
+        // Supports full ECMAScript 2024+ including async/await, optional chaining, BigInt, etc.
 
         // Initialize script system on first use
         if (!hasInit) {
@@ -351,21 +369,28 @@ public class scriptWrapper {
             future.cancel(true);
         }
 
-        ScriptEngine engine = scriptEngines.remove(scriptName);
+        V8Runtime engine = scriptEngines.remove(scriptName);
         runningScripts.remove(scriptName);
         if (engine != null) {
-
-            if (engine instanceof Invocable invocable) {
-                try {
-                    invocable.invokeFunction("_unloadThis");
-                } catch (NoSuchMethodException | ScriptException e) {
-                    Logger.scriptlog(Level.WARNING, scriptName, "Failed to garbage collect: " + e.getMessage(), pluginLogger.RED);
+            try (V8ValueObject globalObject = engine.getGlobalObject()) {
+                if (globalObject.has("_unloadThis")) {
+                    try (V8ValueFunction unloadFn = globalObject.get("_unloadThis")) {
+                        if (!unloadFn.isUndefined()) {
+                            unloadFn.callVoid(null);
+                        }
+                    }
                 }
+            } catch (JavetException e) {
+                Logger.scriptlog(Level.WARNING, scriptName, "Failed to call cleanup function: " + e.getMessage(), pluginLogger.RED);
             }
 
-            engine.getBindings(ScriptContext.ENGINE_SCOPE).clear();
-            engine = null;
-            System.gc(); // I am not even sure if that will help
+            // Javet cleanup: notify GC and close runtime
+            engine.lowMemoryNotification();
+            try {
+                engine.close();
+            } catch (JavetException e) {
+                Logger.scriptlog(Level.SEVERE, scriptName, "Failed to close V8Runtime: " + e.getMessage(), pluginLogger.RED);
+            }
         }
 
         if (plugin.isEnabled()) {
@@ -375,7 +400,7 @@ public class scriptWrapper {
         }
     }
 
-    public String preprocessScript(File scriptFile, ScriptEngine scriptEngine) throws IOException {
+    public String preprocessScript(File scriptFile, V8Runtime scriptEngine, V8ValueObject globalObject) throws IOException, JavetException {
         if (!configUtil.getConfigFromBuffer("UseCustomInterpreter", true)) {
             return new String(Files.readAllBytes(scriptFile.toPath()));
         }
@@ -397,13 +422,16 @@ public class scriptWrapper {
 
         StringBuilder finalScript = new StringBuilder();
 
+        // Use the passed-in global object reference - don't get a new one!
         for (String importStatement : imports) {
             try {
                 Class<?> clazz = Class.forName(importStatement);
                 String simpleName = clazz.getSimpleName();
-                scriptEngine.put(simpleName, clazz);
+                globalObject.set(simpleName, clazz);
             } catch (ClassNotFoundException e) {
                 Logger.scriptlog(Level.WARNING, scriptFile.getName(), "Class not found for import: " + importStatement, pluginLogger.ORANGE);
+            } catch (JavetException e) {
+                Logger.scriptlog(Level.WARNING, scriptFile.getName(), "Failed to set import for " + importStatement + ": " + e.getMessage(), pluginLogger.ORANGE);
             }
         }
 
@@ -499,85 +527,135 @@ public class scriptWrapper {
 
             unloadScript(scriptId);
 
-            ScriptEngine localScriptEngine = coolcostupit.openjs.modules.ScriptEngine.getEngine();
-            scriptEngines.put(scriptId, localScriptEngine);
-
-            // Initialize the custom in-built stuff
-            localScriptEngine.put("plugin", plugin);
-            localScriptEngine.put("scriptManager", this); // TODO: Try to lazy-load this, loading it on every script is memory intensive
-            localScriptEngine.put("scriptEngine", localScriptEngine);
-            localScriptEngine.put("currentScriptName", scriptId);
-            localScriptEngine.put("log", new ScriptLogger(getLogger(), scriptId));
-            localScriptEngine.put("variableStorage", variableStorage);
-            localScriptEngine.put("DiskStorage", sharedClass.DiskStorageApi);
-            localScriptEngine.put("publicVarManager", PublicVarManager);
-            localScriptEngine.put("_task", taskApi); // See class: JavascriptHelper
-            localScriptEngine.put("_libImporter", sharedClass.LibImporterApi);
-            localScriptEngine.put("_internalPluginLogger", Logger);
-            localScriptEngine.put("IsFoliaServer", FoliaSupport.isFolia());
-
             Future<?> future = executorService.submit(() -> {
+                V8Runtime localScriptEngine = null;
+                V8ValueObject globalObject = null;
                 try {
-                    // Developer protections and memory optimization (just a myth but freezing in-build variables should decrease memory overhead)
-                    localScriptEngine.eval("""
-                    const deepFreeze = function(obj) {
-                        if (obj === null || typeof obj !== 'object') return obj;
-                        Object.getOwnPropertyNames(obj).forEach(function(name) {
-                            var prop = obj[name];
-                            if (typeof prop === 'object' && prop !== null && !Object.isFrozen(prop)) {
-                                deepFreeze(prop);
+                    // IMPORTANT: V8Runtime must be created and used on the same thread
+                    localScriptEngine = coolcostupit.openjs.modules.ScriptEngine.getEngine();
+                    final V8Runtime finalEngine = localScriptEngine; // Final reference for use in inner blocks
+                    scriptEngines.put(scriptId, localScriptEngine);
+
+                    // Set global bindings directly (JavetJVMInterceptor handles Java-to-JS conversion)
+                    globalObject = localScriptEngine.getGlobalObject();
+
+                    // Bind Java objects directly to global scope
+                    globalObject.set("plugin", plugin);
+                    globalObject.set("scriptManager", this);
+                    globalObject.set("scriptEngine", finalEngine);
+                    globalObject.set("log", new ScriptLogger(getLogger(), scriptId));
+                    globalObject.set("variableStorage", variableStorage);
+                    globalObject.set("DiskStorage", sharedClass.DiskStorageApi);
+                    globalObject.set("publicVarManager", PublicVarManager);
+                    globalObject.set("_task", taskApi);
+                    globalObject.set("_libImporter", sharedClass.LibImporterApi);
+                    globalObject.set("_internalPluginLogger", Logger);
+                    globalObject.set("currentScriptName", scriptId);
+                    globalObject.set("IsFoliaServer", FoliaSupport.isFolia());
+
+                    // Manually expose Java class loader for dynamic class loading
+                    globalObject.set("__classLoader", Thread.currentThread().getContextClassLoader());
+
+                    // V8 Protection: Make critical properties read-only
+                    // Note: Java objects (plugin, scriptManager, etc.) are already immutable from JavaScript
+                    // V8's proxy system prevents us from freezing Java objects like we could in GraalJS
+                    finalEngine.getExecutor("""
+                    // Create Java package access system using Proxy
+                    function createPackageProxy(packageName) {
+                        const cache = {};
+                        return new Proxy({}, {
+                            get(target, prop) {
+                                if (prop === Symbol.toStringTag) return 'JavaPackage';
+                                if (typeof prop === 'symbol') return undefined;
+
+                                const fullName = packageName ? packageName + '.' + prop : prop;
+
+                                // Check cache first
+                                if (cache[prop]) return cache[prop];
+
+                                try {
+                                    // Try to load as a class
+                                    const javaClass = __classLoader.loadClass(fullName);
+                                    cache[prop] = javaClass;
+                                    return javaClass;
+                                } catch (e) {
+                                    // Not a class, treat as a package
+                                    const subPackage = createPackageProxy(fullName);
+                                    cache[prop] = subPackage;
+                                    return subPackage;
+                                }
+                            },
+                            has(target, prop) {
+                                return true; // Allow any property access
                             }
                         });
-                        return Object.freeze(obj);
                     }
-                    
-                    deepFreeze(plugin);
-                    deepFreeze(scriptManager);
-                    deepFreeze(scriptEngine);
-                    deepFreeze(log);
-                    deepFreeze(variableStorage);
-                    deepFreeze(DiskStorage);
-                    deepFreeze(publicVarManager);
-                    deepFreeze(_task);
-                    deepFreeze(_libImporter);
-                    
+
+                    // Create root package proxies
+                    globalThis.org = createPackageProxy('org');
+                    globalThis.java = createPackageProxy('java');
+                    globalThis.com = createPackageProxy('com');
+                    globalThis.net = createPackageProxy('net');
+                    globalThis.io = createPackageProxy('io');
+
+                    // Make currentScriptName and IsFoliaServer immutable
                     Object.defineProperty(this, 'currentScriptName', {
                       value: currentScriptName,
                       writable: false,
                       configurable: false,
                       enumerable: true
                     });
-                    
+
                     Object.defineProperty(this, 'IsFoliaServer', {
                       value: IsFoliaServer,
                       writable: false,
                       configurable: false,
                       enumerable: true
                     });
-                    """);
+                    """).executeVoid();
 
                     if (configUtil.getConfigFromBuffer("AllowFeatureFlags", true)) {
                         if (FlagInterpreter.hasFlag(scriptFile, "waitForInit")) {
-                            localScriptEngine.eval("scriptManager.waitForInit()");
+                            finalEngine.getExecutor("scriptManager.waitForInit()").executeVoid();
                         }
                     }
 
-                    localScriptEngine.eval(JavascriptHelper.JAVASCRIPT_CODE);
+                    finalEngine.getExecutor(JavascriptHelper.JAVASCRIPT_CODE).executeVoid();
                     List BridgesToLoad = FlagInterpreter.getFlags(scriptFile);
 
                     if (!BridgesToLoad.isEmpty()) {
-                        BridgeLoader.loadBridges(BridgesToLoad, scriptId, localScriptEngine);
+                        BridgeLoader.loadBridges(BridgesToLoad, scriptId, finalEngine);
                     }
 
-                    String processedScript = preprocessScript(scriptFile, localScriptEngine);
-                    localScriptEngine.eval(processedScript);
+                    String processedScript = preprocessScript(scriptFile, finalEngine, globalObject);
+
+                    // Debug: Check what _internalPluginLogger actually is
+                    try {
+                        String debugInfo = finalEngine.getExecutor("""
+                            (function() {
+                                let info = 'Type: ' + typeof _internalPluginLogger + ', ';
+                                info += 'HasMethod: ' + (typeof _internalPluginLogger?.internalException) + ', ';
+                                info += 'Keys: ' + Object.keys(_internalPluginLogger || {}).join(',');
+                                return info;
+                            })()
+                        """).executeString();
+                        Logger.scriptlog(Level.INFO, scriptId, "Debug - _internalPluginLogger: " + debugInfo, pluginLogger.CYAN);
+                    } catch (Exception e) {
+                        Logger.scriptlog(Level.SEVERE, scriptId, "Debug check failed: " + e.getMessage(), pluginLogger.RED);
+                    }
+
+                    finalEngine.getExecutor(processedScript).executeVoid();
                     if (configUtil.getConfigFromBuffer("PrintScriptActivations", true)) {
                         Logger.log(Level.INFO, "Loaded the script " + scriptId, pluginLogger.GREEN);
                     }
                     FoliaSupport.runTaskSynchronously(plugin, () -> //plugin.getServer().getScheduler().runTask(plugin, () ->
                             plugin.getServer().getPluginManager().callEvent(new ScriptLoadedEvent(scriptId)));
-                } catch (IOException | ScriptException e) {
+                } catch (IOException | JavetException e) {
                     Logger.scriptlog(Level.WARNING,  scriptId, "Failed to load script " + e.getMessage(), pluginLogger.ORANGE);
+                } finally {
+                    // Don't close globalObject - V8Value references need to stay alive
+                    // for commands, events, and other callbacks. The V8Runtime will handle cleanup.
+                    // Note: globalObject will be cleaned up when the V8Runtime is closed during unloadScript()
                 }
             });
 
@@ -619,16 +697,38 @@ public class scriptWrapper {
     }
 
     // In-Build script functions: (HELPERS)
-    public void registerCommand(String commandName, Object commandHandler, String scriptName, ScriptEngine scriptEngine, @Nullable String permission) {
+    public void registerCommand(String commandName, V8ValueObject commandHandler, String scriptName, V8Runtime scriptEngine, @Nullable String permission) {
         try {
             CommandMap commandMap = getCommandMap();
+
+            // Store the handler in the V8 global scope for later access
+            String handlerId = "__cmd_" + commandName.replace("-", "_");
+            try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                globalObject.set(handlerId, commandHandler);
+            }
 
             Command dynamicCommand = new Command(commandName) {
                 @Override
                 public boolean execute(@NotNull CommandSender sender, @NotNull String label, String[] args) {
                     if (!testPermission(sender)) return true; // permission check, may be redundant
                     try {
-                        ((Invocable) scriptEngine).invokeMethod(commandHandler, "onCommand", sender, args);
+                        // V8 is single-threaded - set arguments in global scope and execute
+                        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                            globalObject.set("__cmd_sender", sender);
+                            globalObject.set("__cmd_args", args);
+                        }
+
+                        scriptEngine.getExecutor(String.format("""
+                            (function() {
+                                const handler = globalThis.%s;
+                                if (handler && typeof handler.onCommand === 'function') {
+                                    handler.onCommand(globalThis.__cmd_sender, globalThis.__cmd_args);
+                                }
+                                delete globalThis.__cmd_sender;
+                                delete globalThis.__cmd_args;
+                            })();
+                            """, handlerId
+                        )).executeVoid();
                     } catch (Exception e) {
                         sender.sendMessage(chatColors.RED + "An error occurred while executing the command: " + e.getMessage());
                         Logger.scriptlog(Level.SEVERE, scriptName, "Error in script command execution for " + commandName + ": " + e.getMessage(), pluginLogger.ORANGE);
@@ -638,12 +738,34 @@ public class scriptWrapper {
 
                 @Override
                 public @NotNull List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, String[] args) {
-                    if (commandHandler instanceof Bindings && ((Bindings) commandHandler).containsKey("onTabComplete")) {
-                        try {
-                            return (List<String>) ((Invocable) scriptEngine).invokeMethod(commandHandler, "onTabComplete", sender, args);
-                        } catch (Exception e) {
-                            Logger.scriptlog(Level.WARNING, scriptName, "] Error during tab-completion for command " + commandName + ": " + e.getMessage(), pluginLogger.ORANGE);
+                    try {
+                        // V8 is single-threaded - set arguments in global scope and execute
+                        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                            globalObject.set("__cmd_sender", sender);
+                            globalObject.set("__cmd_args", args);
                         }
+
+                        Object result = scriptEngine.getExecutor(String.format("""
+                            (function() {
+                                const handler = globalThis.%s;
+                                if (handler && typeof handler.onTabComplete === 'function') {
+                                    const res = handler.onTabComplete(globalThis.__cmd_sender, globalThis.__cmd_args);
+                                    delete globalThis.__cmd_sender;
+                                    delete globalThis.__cmd_args;
+                                    return res;
+                                }
+                                delete globalThis.__cmd_sender;
+                                delete globalThis.__cmd_args;
+                                return null;
+                            })();
+                            """, handlerId
+                        )).executeObject();
+
+                        if (result instanceof List) {
+                            return (List<String>) result;
+                        }
+                    } catch (Exception e) {
+                        Logger.scriptlog(Level.WARNING, scriptName, "Error during tab-completion for command " + commandName + ": " + e.getMessage(), pluginLogger.ORANGE);
                     }
                     return super.tabComplete(sender, alias, args);
                 }
@@ -678,13 +800,31 @@ public class scriptWrapper {
     }
 
     // TODO: Remove in 1.1.3 (In favor of taskApi)
-    public void registerSchedule(String scriptName, long delay, long period, Object handler, ScriptEngine scriptEngine, String methodName) {
+    public void registerSchedule(String scriptName, long delay, long period, V8ValueObject handler, V8Runtime scriptEngine, String methodName) {
         Logger.scriptlog(Level.WARNING, scriptName, "Do not use registerSchedule! This will get removed soon, use task.repeat instead!", pluginLogger.ORANGE);
+
+        // Store handler for cross-thread access
+        String handlerId = "__schedule_" + System.nanoTime();
+        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+            globalObject.set(handlerId, handler);
+        } catch (Exception e) {
+            Logger.log(Level.SEVERE, "["+scriptName+"] Failed to register schedule: " + e.getMessage(), pluginLogger.RED);
+            return;
+        }
+
         Runnable task = () -> {
             try {
-                ((Invocable) scriptEngine).invokeMethod(handler, methodName);
-            } catch (ScriptException | NoSuchMethodException e) {
-                Logger.log(Level.SEVERE, "["+scriptName+"] " + e.getMessage(), pluginLogger.RED);
+                scriptEngine.getExecutor(String.format("""
+                    (function() {
+                        const handler = globalThis.%s;
+                        if (handler && typeof handler.%s === 'function') {
+                            handler.%s();
+                        }
+                    })();
+                    """, handlerId, methodName, methodName
+                )).executeVoid();
+            } catch (Exception e) {
+                Logger.log(Level.SEVERE, "["+scriptName+"] Schedule execution error: " + e.getMessage(), pluginLogger.RED);
             }
         };
 
@@ -698,17 +838,38 @@ public class scriptWrapper {
         scriptTasksMap.computeIfAbsent(scriptName, k -> new ArrayList<>()).add(Integer.valueOf(taskId));
     }
 
-    public Listener registerEvent(String eventClassName, Object handler, String scriptName, ScriptEngine scriptEngine) {
+    public Listener registerEvent(String eventClassName, V8ValueObject handler, String scriptName, V8Runtime scriptEngine) throws JavetException {
         try {
             Class<?> eventClass = Class.forName(eventClassName);
             if (Event.class.isAssignableFrom(eventClass)) {
                 Class<? extends Event> eventClassCasted = (Class<? extends Event>) eventClass;
+
+                // Store handler for the inline executor too
+                String handlerId = "__event_inline_" + System.nanoTime();
+                try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                    globalObject.set(handlerId, handler);
+                }
+
                 Listener listener = new EventListenerWrapper(scriptEngine, handler, plugin);
                 getServer().getPluginManager().registerEvent(eventClassCasted, listener, EventPriority.NORMAL, (l, e) -> {
                     try {
-                        ((Invocable) scriptEngine).invokeMethod(handler, "handleEvent", e);
-                    } catch (ScriptException | NoSuchMethodException ex) {
-                        Logger.log(Level.SEVERE, "[" + scriptName + "] " + ex.getMessage(), pluginLogger.RED);
+                        // Set event in global scope and execute
+                        try (V8ValueObject globalObject = scriptEngine.getGlobalObject()) {
+                            globalObject.set("__event_data", e);
+                        }
+
+                        scriptEngine.getExecutor(String.format("""
+                            (function() {
+                                const handler = globalThis.%s;
+                                if (handler && typeof handler.handleEvent === 'function') {
+                                    handler.handleEvent(globalThis.__event_data);
+                                }
+                                delete globalThis.__event_data;
+                            })();
+                            """, handlerId
+                        )).executeVoid();
+                    } catch (Exception ex) {
+                        Logger.log(Level.SEVERE, "[" + scriptName + "] Event handler error: " + ex.getMessage(), pluginLogger.RED);
                     }
                 }, plugin);
 
